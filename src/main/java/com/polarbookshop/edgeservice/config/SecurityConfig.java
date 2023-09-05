@@ -19,7 +19,8 @@ public class SecurityConfig {
         return http
                 .authorizeExchange(exchange ->
                         exchange.anyExchange().authenticated()) //所有请求都需要身份验证
-                .formLogin(Customizer.withDefaults()) //通过登录表单启用用户身份验证
+//                .formLogin(Customizer.withDefaults()) //通过登录表单启用用户身份验证
+                .oauth2Login(Customizer.withDefaults())
                 .build();
     }
 }
