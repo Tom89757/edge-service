@@ -1,5 +1,7 @@
 package com.polarbookshop.edgeservice.config;
 
+import reactor.core.publisher.Mono;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -16,65 +18,48 @@ import org.springframework.security.web.server.authentication.logout.ServerLogou
 import org.springframework.security.web.server.csrf.CookieServerCsrfTokenRepository;
 import org.springframework.security.web.server.csrf.CsrfToken;
 import org.springframework.web.server.WebFilter;
-import reactor.core.publisher.Mono;
-
-/**
- * @author Tom89757
- */
 
 @EnableWebFluxSecurity
 public class SecurityConfig {
 
-    @Bean
-    SecurityWebFilterChain springSecurityFilterChain(
-            ServerHttpSecurity http,
-            ReactiveClientRegistrationRepository clientRegistrationRepository
-    ) {
-        return http
-                .authorizeExchange(exchange -> exchange
-                        .pathMatchers("/", "/*.css", "/*.js", "/favicon.ico")
-                        .permitAll()
-                        .pathMatchers(HttpMethod.GET, "/books/**")
-                        .permitAll()
-                        .anyExchange().authenticated()) //所有请求都需要身份验证
-//                .formLogin(Customizer.withDefaults()) //通过登录表单启用用户身份验证
-                .exceptionHandling(exceptionHandling ->
-                        exceptionHandling.authenticationEntryPoint(
-                                new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)
-                        ))
-                .oauth2Login(Customizer.withDefaults())
-                .logout(logout -> logout.logoutSuccessHandler(
-                        oidcLogoutSuccessHandler(clientRegistrationRepository)))
-                .csrf(csrf -> csrf.csrfTokenRepository(
-                        CookieServerCsrfTokenRepository.withHttpOnlyFalse()))
-                .build();
-    }
+	@Bean
+	ServerOAuth2AuthorizedClientRepository authorizedClientRepository() {
+		return new WebSessionServerOAuth2AuthorizedClientRepository();
+	}
 
-    private ServerLogoutSuccessHandler oidcLogoutSuccessHandler(
-            ReactiveClientRegistrationRepository clientRegistrationRepository
-    ) {
-        var oidcLogoutSuccessHandler =
-                new OidcClientInitiatedServerLogoutSuccessHandler(
-                        clientRegistrationRepository
-                );
-        oidcLogoutSuccessHandler.setPostLogoutRedirectUri("{baseUrl}");
-        return oidcLogoutSuccessHandler;
-    }
+	@Bean
+	SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http, ReactiveClientRegistrationRepository clientRegistrationRepository) {
+		return http
+				.authorizeExchange(exchange -> exchange
+						.pathMatchers("/actuator/**").permitAll()
+						.pathMatchers("/", "/*.css", "/*.js", "/favicon.ico").permitAll()
+					 	.pathMatchers(HttpMethod.GET, "/books/**").permitAll()
+						.anyExchange().authenticated()
+				)
+				.exceptionHandling(exceptionHandling -> exceptionHandling
+						.authenticationEntryPoint(new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)))
+				.oauth2Login(Customizer.withDefaults())
+				.logout(logout -> logout.logoutSuccessHandler(oidcLogoutSuccessHandler(clientRegistrationRepository)))
+				.csrf(csrf -> csrf.csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse()))
+				.build();
+	}
 
-    @Bean
-    WebFilter csrfWebFilter() {
-        return (exchange, chain) -> {
-            exchange.getResponse().beforeCommit(() -> Mono.defer(() -> {
-                Mono<CsrfToken> csrfToken =
-                        exchange.getAttribute(CsrfToken.class.getName());
-                return csrfToken != null ? csrfToken.then() : Mono.empty();
-            }));
-            return chain.filter(exchange);
-        };
-    }
+	private ServerLogoutSuccessHandler oidcLogoutSuccessHandler(ReactiveClientRegistrationRepository clientRegistrationRepository) {
+		var oidcLogoutSuccessHandler = new OidcClientInitiatedServerLogoutSuccessHandler(clientRegistrationRepository);
+		oidcLogoutSuccessHandler.setPostLogoutRedirectUri("{baseUrl}");
+		return oidcLogoutSuccessHandler;
+	}
 
-    @Bean
-    ServerOAuth2AuthorizedClientRepository authorizedClientRepository() {
-        return new WebSessionServerOAuth2AuthorizedClientRepository();
-    }
+	@Bean
+	WebFilter csrfWebFilter() {
+		// Required because of https://github.com/spring-projects/spring-security/issues/5766
+		return (exchange, chain) -> {
+			exchange.getResponse().beforeCommit(() -> Mono.defer(() -> {
+				Mono<CsrfToken> csrfToken = exchange.getAttribute(CsrfToken.class.getName());
+				return csrfToken != null ? csrfToken.then() : Mono.empty();
+			}));
+			return chain.filter(exchange);
+		};
+	}
+
 }
